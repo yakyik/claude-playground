@@ -31,7 +31,7 @@ export interface AuthClaims {
  * - 'api-key': Simple shared secret in Authorization header
  * - 'jwt': Signed tokens with tool-scoped claims
  */
-export type AuthStrategy = 'api-key' | 'jwt';
+export type AuthStrategy = 'api-key' | 'jwt' | 'mtls';
 
 export interface AuthConfig {
   strategy: AuthStrategy;
@@ -41,6 +41,8 @@ export interface AuthConfig {
   jwtSecret?: string;
   /** For jwt strategy: expected issuer claim */
   jwtIssuer?: string;
+  /** For mtls strategy: path to CA certificate for validating client certs */
+  mtlsCaPath?: string;
 }
 
 // ─── Backend Service Registry ───────────────────────────────────────────────
