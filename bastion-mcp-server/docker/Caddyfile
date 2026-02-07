@@ -1,0 +1,46 @@
+# ─── Bastion MCP Server — Caddy Configuration ───────────────────────────────
+#
+# Caddy handles TLS termination (automatic Let's Encrypt certificates)
+# and reverse proxies all traffic to the MCP server on port 3001.
+#
+# In production, replace {$BASTION_DOMAIN} with your actual domain,
+# or set the BASTION_DOMAIN environment variable.
+#
+# This is the only component that needs a public-facing port. Everything
+# behind Caddy (the MCP server, Tailscale, backend services) is private.
+
+{$BASTION_DOMAIN:bastion.localhost} {
+    # TLS is automatic — Caddy provisions and renews Let's Encrypt
+    # certificates without any configuration. For internal CAs or
+    # custom certificates, see: https://caddyserver.com/docs/caddyfile/directives/tls
+
+    # Forward all MCP traffic to the application server.
+    # flush_interval -1 disables response buffering, which is needed
+    # for SSE streaming if you enable it in the future.
+    reverse_proxy mcp-server:3001 {
+        flush_interval -1
+
+        # Pass client info to the backend for audit logging
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Request-ID {http.request.uuid}
+    }
+
+    # Security headers
+    header {
+        # Prevent MIME type sniffing
+        X-Content-Type-Options nosniff
+        # Prevent clickjacking
+        X-Frame-Options DENY
+        # Enable HSTS (after you've verified TLS works correctly)
+        # Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        # Remove server identification
+        -Server
+    }
+
+    # Request logging — structured JSON output for log aggregation
+    log {
+        output stderr
+        format json
+        level INFO
+    }
+}

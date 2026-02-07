@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables (contains secrets)
+.env
+.env.local
+.env.production
+
+# Service registry config (may contain internal URLs)
+config/services.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tailscale state (only relevant in Docker volumes)
+tailscale_state/
+
+# Caddy data (certificates — managed by Docker volumes)
+caddy_data/
+caddy_config/
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+coverage/

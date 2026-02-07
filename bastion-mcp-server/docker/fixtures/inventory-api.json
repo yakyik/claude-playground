@@ -1,0 +1,9 @@
+{
+  "items": [
+    { "id": "SKU-001", "name": "Widget A", "quantity": 150, "warehouse": "us-east-1" },
+    { "id": "SKU-002", "name": "Widget B", "quantity": 75, "warehouse": "us-west-2" },
+    { "id": "SKU-003", "name": "Gadget C", "quantity": 0, "warehouse": "eu-west-1" }
+  ],
+  "total": 3,
+  "lastUpdated": "2025-01-15T10:30:00Z"
+}

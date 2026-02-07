@@ -1,0 +1,41 @@
+{
+  "services": [
+    {
+      "name": "analytics-db",
+      "url": "http://analytics-db.tail1234.ts.net:5432",
+      "healthCheckPath": "/health",
+      "timeoutMs": 5000,
+      "headers": {}
+    },
+    {
+      "name": "metrics-db",
+      "url": "http://metrics-db.tail1234.ts.net:5432",
+      "healthCheckPath": "/health",
+      "timeoutMs": 5000,
+      "headers": {}
+    },
+    {
+      "name": "users",
+      "url": "http://users-api.tail1234.ts.net:8080",
+      "healthCheckPath": "/health",
+      "timeoutMs": 10000,
+      "headers": {
+        "X-Internal-Caller": "bastion-mcp-server"
+      }
+    },
+    {
+      "name": "inventory",
+      "url": "http://inventory-api.tail1234.ts.net:8080",
+      "healthCheckPath": "/health",
+      "timeoutMs": 10000,
+      "headers": {}
+    },
+    {
+      "name": "billing",
+      "url": "http://billing-api.tail1234.ts.net:8080",
+      "healthCheckPath": "/health",
+      "timeoutMs": 10000,
+      "headers": {}
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  mcp-server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - TRANSPORT=http
+      - PORT=3001
+      - BASTION_API_KEY=dev-api-key-12345
+      - LOG_LEVEL=debug
+      - BASTION_SERVICES=[{"name":"analytics-db","url":"http://mock-analytics:3000","timeoutMs":5000},{"name":"users-api","url":"http://mock-users:3000","timeoutMs":5000},{"name":"inventory-api","url":"http://mock-inventory:3000","timeoutMs":5000}]
+    depends_on:
+      - mock-analytics
+      - mock-users
+      - mock-inventory
+    networks:
+      - bastion-dev
+
+  mock-analytics:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.mock
+    environment:
+      - SERVICE_NAME=analytics-db
+      - FIXTURE_PATH=/fixtures/analytics-db.json
+      - PORT=3000
+    volumes:
+      - ./docker/fixtures:/fixtures:ro
+    networks:
+      - bastion-dev
+
+  mock-users:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.mock
+    environment:
+      - SERVICE_NAME=users-api
+      - FIXTURE_PATH=/fixtures/users-api.json
+      - PORT=3000
+    volumes:
+      - ./docker/fixtures:/fixtures:ro
+    networks:
+      - bastion-dev
+
+  mock-inventory:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.mock
+    environment:
+      - SERVICE_NAME=inventory-api
+      - FIXTURE_PATH=/fixtures/inventory-api.json
+      - PORT=3000
+    volumes:
+      - ./docker/fixtures:/fixtures:ro
+    networks:
+      - bastion-dev
+
+networks:
+  bastion-dev:
+    driver: bridge

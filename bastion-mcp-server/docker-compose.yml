@@ -1,0 +1,98 @@
+# ─── Bastion MCP Server — Full Stack ─────────────────────────────────────────
+#
+# This compose file runs the complete bastion deployment:
+#   1. Caddy (TLS termination, reverse proxy)
+#   2. The MCP server (Streamable HTTP on port 3001)
+#   3. Tailscale sidecar (mesh networking to internal services)
+#
+# For the minimal single-VM topology, this is all you need.
+# For Kubernetes deployments, see the architecture doc (Section 4.2).
+#
+# Usage:
+#   cp .env.example .env    # Fill in your secrets
+#   docker compose up -d    # Start the stack
+#
+# Requirements:
+#   - A Tailscale auth key (get one from https://login.tailscale.com/admin/settings/keys)
+#   - A domain name pointed at this server's public IP
+#   - Either BASTION_JWT_SECRET or BASTION_API_KEY set in .env
+
+services:
+  # ─── Caddy — TLS Termination ───────────────────────────────────────────
+  # Caddy automatically provisions Let's Encrypt certificates and renews
+  # them. It's the only component with a public-facing port. All traffic
+  # to the MCP server goes through Caddy.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"     # HTTP → HTTPS redirect
+      - "443:443"   # HTTPS (TLS terminated here)
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data       # Cert storage (persists across restarts)
+      - caddy_config:/config
+    depends_on:
+      - mcp-server
+    environment:
+      - BASTION_DOMAIN=${BASTION_DOMAIN:-bastion.localhost}
+
+  # ─── MCP Server — The Bastion Application ──────────────────────────────
+  # This is the TypeScript MCP server that registers tools and proxies
+  # requests to backend services over the Tailscale mesh.
+  mcp-server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    # Not exposed to the public — only Caddy can reach it
+    expose:
+      - "3001"
+    environment:
+      - PORT=3001
+      - TRANSPORT=http
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - BASTION_JWT_SECRET=${BASTION_JWT_SECRET:-}
+      - BASTION_API_KEY=${BASTION_API_KEY:-}
+      - BASTION_CONFIG_PATH=/app/config/services.json
+    volumes:
+      - ./config:/app/config:ro
+    # The MCP server uses the Tailscale sidecar's network namespace
+    # so that it can reach tailnet services via MagicDNS names.
+    network_mode: "service:tailscale"
+    depends_on:
+      tailscale:
+        condition: service_healthy
+
+  # ─── Tailscale Sidecar — Mesh Networking ───────────────────────────────
+  # The Tailscale container joins your tailnet and provides the network
+  # namespace that the MCP server uses to reach internal services.
+  # The MCP server sees the tailnet as its local network.
+  tailscale:
+    image: tailscale/tailscale:latest
+    hostname: bastion
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - tailscale_state:/var/lib/tailscale
+    environment:
+      # Auth key from Tailscale admin console. Use a reusable, ephemeral key
+      # tagged with 'tag:bastion' so the ACLs apply automatically.
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      # Advertise tags so ACLs can target this device
+      - TS_EXTRA_ARGS=--advertise-tags=tag:bastion
+      # Run in userspace mode (no kernel module needed in containers)
+      - TS_USERSPACE=true
+    healthcheck:
+      test: ["CMD", "tailscale", "status", "--json"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  caddy_data:
+  caddy_config:
+  tailscale_state:

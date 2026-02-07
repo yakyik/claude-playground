@@ -1,0 +1,80 @@
+{
+  // ─── Bastion MCP Server — Tailscale ACL Policy ────────────────────────
+  //
+  // This is the MOST IMPORTANT security configuration in the architecture.
+  // It defines the "blast radius" — even if the bastion is fully compromised,
+  // the attacker can ONLY reach the services and ports listed here.
+  //
+  // Copy the relevant sections into your existing Tailscale ACL policy at:
+  // https://login.tailscale.com/admin/acls
+  //
+  // IMPORTANT: Tailscale uses a default-deny posture. If a source:destination
+  // pair isn't explicitly listed in an "accept" rule, it's blocked.
+  // This means the bastion CANNOT reach anything not listed below.
+
+  "acls": [
+    // ─── Bastion → Backend Services (LEAST PRIVILEGE) ─────────────────
+    // The bastion can ONLY reach these specific service:port pairs.
+    // Add or remove entries here as you add/remove tools.
+    {
+      "action": "accept",
+      "src":    ["tag:bastion"],
+      "dst": [
+        "tag:analytics-db:5432",
+        "tag:metrics-db:5432",
+        "tag:inventory-api:8080",
+        "tag:billing-api:8080",
+        "tag:users-api:8080"
+      ]
+    },
+
+    // ─── Engineering Team → Everything (your existing rules) ──────────
+    // Your team's normal access rules. The bastion does NOT inherit these.
+    {
+      "action": "accept",
+      "src":    ["group:engineering"],
+      "dst":    ["*:*"]
+    }
+
+    // NOTE: Everything NOT explicitly listed above is DENIED for tag:bastion.
+    // The bastion cannot:
+    //   - SSH to any machine (port 22 not listed)
+    //   - Reach production databases on other ports
+    //   - Scan the tailnet for other services
+    //   - Reach services tagged differently
+  ],
+
+  // ─── Tag Owners ─────────────────────────────────────────────────────
+  // Tag owners control who can assign these tags to devices.
+  // This prevents an attacker from self-tagging a compromised machine
+  // as "tag:bastion" to inherit the bastion's ACLs.
+  "tagOwners": {
+    "tag:bastion":        ["group:platform-team"],
+    "tag:analytics-db":   ["group:data-team"],
+    "tag:metrics-db":     ["group:data-team"],
+    "tag:inventory-api":  ["group:backend-team"],
+    "tag:billing-api":    ["group:backend-team"],
+    "tag:users-api":      ["group:backend-team"]
+  },
+
+  // ─── Groups ─────────────────────────────────────────────────────────
+  // Define who belongs to each group. Replace with your actual emails.
+  "groups": {
+    "group:platform-team": [
+      "alice@yourcompany.com",
+      "bob@yourcompany.com"
+    ],
+    "group:data-team": [
+      "carol@yourcompany.com"
+    ],
+    "group:backend-team": [
+      "dave@yourcompany.com",
+      "eve@yourcompany.com"
+    ],
+    "group:engineering": [
+      "group:platform-team",
+      "group:data-team",
+      "group:backend-team"
+    ]
+  }
+}
