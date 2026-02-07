@@ -37,3 +37,12 @@ export const HEALTH_CHECK_PATH = '/health';
 
 /** MCP endpoint path */
 export const MCP_ENDPOINT_PATH = '/mcp';
+
+/** Default timeout for command execution (30 seconds) */
+export const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
+
+/** Maximum timeout for command execution (5 minutes) */
+export const MAX_COMMAND_TIMEOUT_MS = 300_000;
+
+/** Interval for cleaning up completed/stale jobs (1 minute) */
+export const JOB_CLEANUP_INTERVAL_MS = 60_000;

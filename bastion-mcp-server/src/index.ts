@@ -29,6 +29,7 @@ import { createRateLimitMiddleware } from './middleware/rate-limit.js';
 import { createToolScopeMiddleware } from './middleware/tool-scope.js';
 import { createBackendClient, buildRegistry } from './services/backend.js';
 import { registerExampleTools } from './tools/example-tools.js';
+import { registerExecTools } from './tools/exec-tools.js';
 import { logger } from './services/logger.js';
 import { HEALTH_CHECK_PATH, MCP_ENDPOINT_PATH } from './constants.js';
 
@@ -62,6 +63,7 @@ async function main(): Promise<void> {
   });
 
   registerExampleTools(mcpServer, backend);
+  registerExecTools(mcpServer, backend);
   logger.info('MCP tools registered');
 
   // 5. Start the appropriate transport
