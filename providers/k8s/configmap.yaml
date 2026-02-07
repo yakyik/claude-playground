@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bastion-mcp-config
+  namespace: bastion
+data:
+  config.yaml: |
+    services:
+      - name: analytics-db
+        url: http://analytics-db.bastion.svc.cluster.local:5432
+        healthCheckPath: /health
+        timeoutMs: 5000
+      - name: metrics-db
+        url: http://metrics-db.bastion.svc.cluster.local:5432
+        healthCheckPath: /health
+        timeoutMs: 5000
+      - name: users
+        url: http://users-api.bastion.svc.cluster.local:8080
+        healthCheckPath: /health
+        timeoutMs: 10000
+      - name: inventory
+        url: http://inventory-api.bastion.svc.cluster.local:8080
+        healthCheckPath: /health
+        timeoutMs: 10000

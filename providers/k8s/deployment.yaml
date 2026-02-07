@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bastion-mcp-server
+  namespace: bastion
+  labels:
+    app: bastion-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bastion-mcp
+  template:
+    metadata:
+      labels:
+        app: bastion-mcp
+    spec:
+      serviceAccountName: bastion-mcp
+      containers:
+        - name: bastion-mcp
+          image: bastion-mcp-server:latest
+          ports:
+            - containerPort: 3001
+              name: http
+          env:
+            - name: TRANSPORT
+              value: "http"
+            - name: BASTION_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: bastion-mcp-secrets
+                  key: api-key
+            - name: BASTION_CONFIG_PATH
+              value: /etc/bastion/config.yaml
+          volumeMounts:
+            - name: config
+              mountPath: /etc/bastion
+              readOnly: true
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+
+        - name: tailscale
+          image: ghcr.io/tailscale/tailscale:latest
+          env:
+            - name: TS_AUTHKEY
+              valueFrom:
+                secretKeyRef:
+                  name: bastion-mcp-secrets
+                  key: tailscale-auth-key
+            - name: TS_HOSTNAME
+              value: bastion-mcp
+            - name: TS_KUBE_SECRET
+              value: bastion-tailscale-state
+            - name: TS_USERSPACE
+              value: "true"
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+
+      volumes:
+        - name: config
+          configMap:
+            name: bastion-mcp-config

@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bastion
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bastion-mcp
+  namespace: bastion
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: bastion-mcp
+  namespace: bastion
+rules:
+  # Allow Tailscale sidecar to manage its state secret
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "update", "create"]
+    resourceNames: ["bastion-tailscale-state"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: bastion-mcp
+  namespace: bastion
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: bastion-mcp
+subjects:
+  - kind: ServiceAccount
+    name: bastion-mcp
+    namespace: bastion
