@@ -1,0 +1,21 @@
+# Profile: GCP Production
+# Overrides base config for services reachable via Tailscale on GCP.
+
+services:
+  - name: analytics-db
+    url: http://analytics-db.gcp-prod.ts.net:5432
+    timeoutMs: 3000
+
+  - name: metrics-db
+    url: http://metrics-db.gcp-prod.ts.net:5432
+    timeoutMs: 3000
+
+  - name: users
+    url: http://users-api.gcp-prod.ts.net:8080
+
+  - name: inventory
+    url: http://inventory-api.gcp-prod.ts.net:8080
+
+  - name: billing
+    url: http://billing-api.gcp-prod.ts.net:8080
+    timeoutMs: 10000

@@ -1,0 +1,18 @@
+# Profile: AWS Development
+# Overrides base config for services reachable via Tailscale on AWS.
+
+services:
+  - name: analytics-db
+    url: http://analytics-db.aws-dev.ts.net:5432
+
+  - name: metrics-db
+    url: http://metrics-db.aws-dev.ts.net:5432
+
+  - name: users
+    url: http://users-api.aws-dev.ts.net:8080
+
+  - name: inventory
+    url: http://inventory-api.aws-dev.ts.net:8080
+
+  - name: billing
+    url: http://billing-api.aws-dev.ts.net:8080

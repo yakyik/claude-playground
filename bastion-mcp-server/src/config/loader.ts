@@ -11,7 +11,9 @@
  */
 
 import { readFileSync, existsSync } from 'node:fs';
+import { parse as parseYaml } from 'yaml';
 import type { BastionConfig, AuthConfig, BackendService } from '../types.js';
+import { strategicMerge } from './merge.js';
 import {
   DEFAULT_SERVER_NAME,
   DEFAULT_SERVER_VERSION,
@@ -98,21 +100,24 @@ function loadAuthConfig(): AuthConfig {
  * (useful for development — you'd register tools programmatically).
  */
 function loadServiceRegistry(): BackendService[] {
-  // Try config file first
-  const configPath = process.env.BASTION_CONFIG_PATH;
-  if (configPath && existsSync(configPath)) {
-    try {
-      const raw = readFileSync(configPath, 'utf-8');
-      const parsed = JSON.parse(raw) as { services?: BackendService[] };
-      return (parsed.services ?? []).map(normalizeService);
-    } catch (err) {
-      throw new Error(
-        `Failed to parse config file at ${configPath}: ${err instanceof Error ? err.message : String(err)}`
-      );
-    }
+  // Base + overlay merge path
+  const basePath = process.env.BASTION_CONFIG_BASE;
+  const overlayPath = process.env.BASTION_CONFIG_OVERLAY;
+  if (basePath && overlayPath) {
+    const base = loadConfigFile(basePath);
+    const overlay = loadConfigFile(overlayPath);
+    const merged = strategicMerge(base, overlay) as { services?: BackendService[] };
+    return (merged.services ?? []).map(normalizeService);
   }
 
-  // Try env var
+  // Single config file path
+  const configPath = process.env.BASTION_CONFIG_PATH;
+  if (configPath && existsSync(configPath)) {
+    const parsed = loadConfigFile(configPath) as { services?: BackendService[] };
+    return (parsed.services ?? []).map(normalizeService);
+  }
+
+  // Inline JSON env var
   if (process.env.BASTION_SERVICES) {
     try {
       const parsed = JSON.parse(process.env.BASTION_SERVICES) as BackendService[];
@@ -126,6 +131,27 @@ function loadServiceRegistry(): BackendService[] {
 
   // Empty registry — tools will be registered programmatically
   return [];
+}
+
+/**
+ * Load and parse a config file. Supports JSON (.json) and YAML (.yaml, .yml).
+ */
+function loadConfigFile(filePath: string): unknown {
+  if (!existsSync(filePath)) {
+    throw new Error(`Config file not found: ${filePath}`);
+  }
+
+  try {
+    const raw = readFileSync(filePath, 'utf-8');
+    if (filePath.endsWith('.yaml') || filePath.endsWith('.yml')) {
+      return parseYaml(raw);
+    }
+    return JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      `Failed to parse config file at ${filePath}: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
 }
 
 /**

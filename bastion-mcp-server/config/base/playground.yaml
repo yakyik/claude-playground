@@ -1,0 +1,38 @@
+# Base configuration for the bastion MCP server.
+# This file defines the full schema with all fields documented.
+# Profile overlays (config/profiles/*.yaml) override specific values.
+#
+# Usage:
+#   BASTION_CONFIG_BASE=config/base/playground.yaml
+#   BASTION_CONFIG_OVERLAY=config/profiles/mac-local.yaml
+
+# Backend services reachable over the Tailscale mesh.
+# Each entry maps a logical name to a tailnet URL.
+services:
+  - name: analytics-db
+    url: http://analytics-db.tail0000.ts.net:5432
+    healthCheckPath: /health
+    timeoutMs: 5000
+    headers: {}
+
+  - name: metrics-db
+    url: http://metrics-db.tail0000.ts.net:5432
+    healthCheckPath: /health
+    timeoutMs: 5000
+
+  - name: users
+    url: http://users-api.tail0000.ts.net:8080
+    healthCheckPath: /health
+    timeoutMs: 10000
+
+  - name: inventory
+    url: http://inventory-api.tail0000.ts.net:8080
+    healthCheckPath: /health
+    timeoutMs: 10000
+
+  - name: billing
+    url: http://billing-api.tail0000.ts.net:8080
+    healthCheckPath: /health
+    timeoutMs: 15000
+    headers:
+      X-Service-Version: "v2"

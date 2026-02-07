@@ -1,0 +1,28 @@
+# Bastion MCP Server — Configuration Example
+#
+# Copy this file and customize for your environment.
+# The bastion loads config via environment variables:
+#
+#   Single file:
+#     BASTION_CONFIG_PATH=config/playground.yaml
+#
+#   Base + overlay (recommended for multi-environment):
+#     BASTION_CONFIG_BASE=config/base/playground.yaml
+#     BASTION_CONFIG_OVERLAY=config/profiles/mac-local.yaml
+#
+# Supported formats: .json, .yaml, .yml
+
+# Backend services the bastion can proxy to.
+# Each service must be reachable from the bastion's network
+# (Tailscale mesh, Docker network, k8s cluster, etc.)
+services:
+  - name: analytics-db                           # Logical name used in tool definitions
+    url: http://analytics-db.tail1234.ts.net:5432 # Tailnet URL (only routable inside mesh)
+    healthCheckPath: /health                      # Pinged on startup (optional, default: /health)
+    timeoutMs: 5000                               # Request timeout in ms (optional, default: 10000)
+    headers:                                      # Extra headers sent with every request (optional)
+      X-Custom-Header: "value"
+
+  - name: users
+    url: http://users-api.tail1234.ts.net:8080
+    timeoutMs: 10000

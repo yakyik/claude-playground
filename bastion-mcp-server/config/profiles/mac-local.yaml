@@ -1,0 +1,18 @@
+# Profile: Mac Local Development
+# Overrides base config for local Docker Compose backends on localhost.
+
+services:
+  - name: analytics-db
+    url: http://localhost:5432
+
+  - name: metrics-db
+    url: http://localhost:5433
+
+  - name: users
+    url: http://localhost:8081
+
+  - name: inventory
+    url: http://localhost:8082
+
+  - name: billing
+    url: http://localhost:8083
