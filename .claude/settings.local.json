@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(git -C /Users/b/go/src/github.com/jo824/claude-playground/ rev-parse --is-inside-work-tree)",
+      "Bash(git config:*)",
+      "Bash(test:*)",
+      "Bash(git -C /Users/b/go/src/github.com/jo824/claude-playground log --oneline -5)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npm run test:*)"
+    ]
+  }
+}

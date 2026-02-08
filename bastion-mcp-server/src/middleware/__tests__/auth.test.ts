@@ -162,4 +162,38 @@ describe('Auth middleware', () => {
     expect(next).not.toHaveBeenCalled();
     expect(res._status).toBe(401);
   });
+
+  // ── Algorithm pinning (SEC-JWT) ──
+
+  it('rejects JWT signed with HS384 when only HS256 is allowed', () => {
+    const token = jwt.sign(
+      { sub: 'test-user', tools: [] },
+      jwtSecret,
+      { algorithm: 'HS384', issuer: jwtIssuer, expiresIn: '1h' }
+    );
+    const middleware = createAuthMiddleware(jwtConfig);
+    const req = mockReq({ authorization: `Bearer ${token}` }) as Request;
+    const res = mockRes();
+
+    middleware(req, res as unknown as Response, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res._status).toBe(403);
+  });
+
+  it('accepts JWT signed with HS256', () => {
+    const token = jwt.sign(
+      { sub: 'test-user', tools: [] },
+      jwtSecret,
+      { algorithm: 'HS256', issuer: jwtIssuer, expiresIn: '1h' }
+    );
+    const middleware = createAuthMiddleware(jwtConfig);
+    const req = mockReq({ authorization: `Bearer ${token}` }) as Request;
+    const res = mockRes();
+
+    middleware(req, res as unknown as Response, next);
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(req.authClaims!.sub).toBe('test-user');
+  });
 });

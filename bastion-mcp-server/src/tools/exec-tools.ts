@@ -10,7 +10,7 @@ import { z } from 'zod';
 import type { createBackendClient } from '../services/backend.js';
 import { startAudit } from '../services/audit.js';
 import { validateCommand, getCommandAllowlist, type PrivilegeConfig } from '../services/privilege.js';
-import { executeCommand } from '../services/sandbox.js';
+import { executeCommand, executeScript } from '../services/sandbox.js';
 import { startJob, getJob } from '../services/job-manager.js';
 import { DEFAULT_COMMAND_TIMEOUT_MS, MAX_COMMAND_TIMEOUT_MS } from '../constants.js';
 
@@ -21,6 +21,20 @@ const defaultPrivilegeConfig: PrivilegeConfig = {
   allowPatterns: [],
   denyPatterns: [],
 };
+
+/**
+ * Derive privilege level from auth claims scope.
+ * The privilege level is server-controlled, never caller-supplied.
+ *   - 'admin' or 'privilege:2' → Level 2 (permissive)
+ *   - 'operator' or 'privilege:1' → Level 1 (configured allowlist)
+ *   - everything else → Level 0 (read-only)
+ */
+export function resolvePrivilegeLevel(scope?: string): number {
+  if (!scope) return 0;
+  if (scope === 'admin' || scope === 'privilege:2') return 2;
+  if (scope === 'operator' || scope === 'privilege:1') return 1;
+  return 0;
+}
 
 /**
  * Register command execution tools on the MCP server.
@@ -44,7 +58,7 @@ function registerExecCommandTool(server: McpServer): void {
       title: 'Execute Shell Command',
       description: `Execute a shell command on the bastion host with privilege-tier validation.
 
-Privilege levels:
+Privilege levels (derived from auth token scope, not caller-controlled):
   - 0 (read-only): Only safe read commands (ls, cat, grep, git status, etc.)
   - 1 (configured): Commands matching admin-configured regex patterns
   - 2 (permissive): All commands except the hardcoded denylist
@@ -57,15 +71,12 @@ will be submitted as a background job. Use check_job_status to poll for results.
 
 Args:
   - command (string): Shell command to execute
-  - privilege_level (number): 0, 1, or 2 (default: 0)
   - timeout_seconds (number): Max execution time, 1-300 (default: 30)
 
 Returns:
   Command output (stdout/stderr), exit code, and duration.`,
       inputSchema: {
         command: z.string().min(1).describe('Shell command to execute'),
-        privilege_level: z.number().int().min(0).max(2).default(0)
-          .describe('Privilege level: 0=read-only, 1=configured, 2=permissive'),
         timeout_seconds: z.number().int().min(1).max(300).default(30)
           .describe('Maximum execution time in seconds'),
       },
@@ -76,11 +87,15 @@ Returns:
         openWorldHint: false,
       },
     },
-    async ({ command, privilege_level, timeout_seconds }) => {
-      const audit = startAudit('exec_command', { command, privilege_level });
+    async ({ command, timeout_seconds }, extra) => {
+      // Derive privilege level from auth claims — never caller-controlled
+      const claims = extra._meta?.authClaims as { scope?: string } | undefined;
+      const privilegeLevel = resolvePrivilegeLevel(claims?.scope);
+
+      const audit = startAudit('exec_command', { command, privilegeLevel });
 
       // Validate command against privilege tier
-      const validation = validateCommand(command, privilege_level, defaultPrivilegeConfig);
+      const validation = validateCommand(command, privilegeLevel, defaultPrivilegeConfig);
       if (!validation.allowed) {
         audit.failure('bastion', 403, validation.reason);
         return {
@@ -162,15 +177,35 @@ Returns:
         openWorldHint: false,
       },
     },
-    async ({ script, interpreter, timeout_seconds }) => {
+    async ({ script, interpreter, timeout_seconds }, extra) => {
       const audit = startAudit('exec_script', { interpreter, scriptLength: script.length });
 
-      // Wrap script execution: write to temp, execute, clean up
-      // Using a heredoc approach via shell to avoid fs writes
-      const escapedScript = script.replace(/'/g, "'\\''");
-      const command = `${interpreter} -c '${escapedScript}'`;
+      // Derive privilege level from auth claims (same as exec_command)
+      const claims = extra._meta?.authClaims as { scope?: string } | undefined;
+      const privilegeLevel = resolvePrivilegeLevel(claims?.scope);
 
-      const result = await executeCommand(command, {
+      // Validate each non-empty, non-comment line of the script against the
+      // privilege tier denylist. This catches dangerous commands embedded in scripts.
+      const lines = script.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('//')) continue;
+
+        const validation = validateCommand(trimmed, privilegeLevel, defaultPrivilegeConfig);
+        if (!validation.allowed) {
+          audit.failure('bastion', 403, validation.reason);
+          return {
+            isError: true,
+            content: [{
+              type: 'text',
+              text: `Script denied at line: ${trimmed}\nReason: ${validation.reason}`,
+            }],
+          };
+        }
+      }
+
+      // Execute via temp file — no shell escaping, no double-interpretation chain
+      const result = await executeScript(script, interpreter, {
         timeoutMs: timeout_seconds * 1000,
       });
 

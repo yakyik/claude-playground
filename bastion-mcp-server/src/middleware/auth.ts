@@ -93,6 +93,7 @@ function validateJwt(token: string, config: AuthConfig): AuthClaims {
   }
 
   const decoded = jwt.verify(token, config.jwtSecret, {
+    algorithms: ['HS256'],
     issuer: config.jwtIssuer,
   }) as Record<string, unknown>;
 

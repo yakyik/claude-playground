@@ -13,7 +13,7 @@ The bastion MCP server implements a security-sensitive gateway that executes she
 
 However, several findings require attention before production deployment. The most critical issue is a **shell injection vulnerability in `exec_script`** that bypasses the privilege validation system entirely. Additional concerns include incomplete denylist coverage in the command validator, missing authorization context in execution tools, ReDoS potential in user-supplied regex patterns, and YAML deserialization without schema validation.
 
-**Overall Risk Assessment:** MEDIUM-HIGH. The shell injection in `exec_script` is exploitable and high-severity. The remaining findings are medium or low severity but collectively widen the attack surface.
+**Overall Risk Assessment:** MEDIUM. All critical and high severity findings (SEC-01 through SEC-04) have been remediated, along with the JWT algorithm confusion issue. The remaining findings are medium or low severity.
 
 ---
 
@@ -21,10 +21,10 @@ However, several findings require attention before production deployment. The mo
 
 | ID | Severity | Category | File:Line | Finding | Recommendation |
 |----|----------|----------|-----------|---------|----------------|
-| SEC-01 | **CRITICAL** | Injection | `src/tools/exec-tools.ts:170-171` | `exec_script` bypasses privilege validation entirely. The script body is passed directly to `executeCommand` via `interpreter -c '...'` with only single-quote escaping. No `validateCommand()` call is made, so denylist/allowlist checks are skipped. An attacker with any auth token can execute arbitrary commands regardless of privilege level. | Apply `validateCommand()` to the composed command string before execution, or validate individual lines of the script body. Consider requiring privilege level 2 for `exec_script`, or remove the tool until a proper sandboxing strategy is in place. |
-| SEC-02 | **HIGH** | Injection | `src/tools/exec-tools.ts:170` | The single-quote escaping (`script.replace(/'/g, "'\\''")`) is the sole defense against shell injection in `exec_script`. This pattern is fragile: if the interpreter is `bash`, constructs like `$()` or backticks inside the script can still be interpreted by the outer `/bin/sh -c` invocation in `sandbox.ts:43`. The command composition is `sh -c "bash -c '...'"`, creating a double-interpretation chain. | Write the script to a temporary file with restricted permissions (mode 0600) and execute the file directly (`spawn(interpreter, [tmpFile])`) instead of passing it via `-c`. Delete the temp file in a `finally` block. |
-| SEC-03 | **HIGH** | Command Injection | `src/services/privilege.ts:41-55` | Hardcoded denylist patterns are bypassable. For example: (a) `rm -rf /` is blocked but `rm -rf /home` or `rm -rf /var` are not. (b) `curl ... \| sh` is blocked but `curl ... -o /tmp/x && sh /tmp/x` is not. (c) Semicolons, `&&`, `$()`, backticks allow chaining denied commands after allowed ones: `ls; rm -rf /`. (d) Base64 encoding (`echo ... \| base64 -d \| sh`) bypasses all pattern matching. | Denylist-only approaches are fundamentally incomplete for shell commands. For Level 0/1, validate the full pipeline (split on `;`, `&&`, `\|\|`, `\|`) and check each segment. Consider using a proper shell parser or running commands in a restricted container/namespace. Add explicit pipeline/chaining checks at all levels. |
-| SEC-04 | **HIGH** | Authorization | `src/tools/exec-tools.ts:79-83` | The `exec_command` tool accepts `privilege_level` as a caller-supplied parameter. Any authenticated user can set `privilege_level: 2` to bypass all allowlist restrictions. The privilege level should be derived from the authenticated identity (JWT claims or role mapping), not from the request body. | Remove `privilege_level` from the tool input schema. Derive it from `authClaims.scope` or a new `role`/`privilege` claim in the JWT. Map API key users to a configured default privilege level. |
+| SEC-01 | **CRITICAL** | Injection | `src/tools/exec-tools.ts:170-171` | **REMEDIATED.** `exec_script` now derives privilege level from auth claims and validates each non-comment line of the script via `validateCommand()` before execution. | Fixed: per-line privilege validation added, privilege derived from `authClaims.scope`. |
+| SEC-02 | **HIGH** | Injection | `src/tools/exec-tools.ts:170` | **REMEDIATED.** `exec_script` now writes the script to a temp file (mode 0600) and spawns the interpreter directly (`spawn(interpreter, [tmpFile])`). No shell wrapping or escaping needed. Temp file is cleaned up in a `finally` block. | Fixed: temp file execution via `executeScript()` in `sandbox.ts`. |
+| SEC-03 | **HIGH** | Command Injection | `src/services/privilege.ts:41-55` | **REMEDIATED.** (a) `env` and `echo` removed from Level 0 allowlist. (b) New denylist patterns: `base64 \| sh`, `curl -o && sh`, `wget -O && sh`. (c) Shell expansion (`$()`, backticks) blocked outright at Level 0/1. (d) Commands split on `;`, `&&`, `\|\|` at Level 0/1 with each segment validated independently. | Fixed: metacharacter splitting, shell expansion blocking, expanded denylist, removed dangerous Level 0 commands. |
+| SEC-04 | **HIGH** | Authorization | `src/tools/exec-tools.ts:79-83` | **REMEDIATED.** `privilege_level` removed from `exec_command` input schema. Both `exec_command` and `exec_script` now derive privilege via `resolvePrivilegeLevel(authClaims.scope)`: `'admin'`/`'privilege:2'` → Level 2, `'operator'`/`'privilege:1'` → Level 1, default → Level 0. | Fixed: server-controlled privilege derivation from auth claims scope. |
 | SEC-05 | **MEDIUM** | ReDoS | `src/services/privilege.ts:80-84` | User-controlled regex patterns from config `denyPatterns` are compiled with `new RegExp(pattern)` on every command validation call. Malicious or poorly-written patterns (e.g., `(a+)+$`) can cause catastrophic backtracking, blocking the event loop. The same issue exists for `allowPatterns` at line 146. | Pre-compile all regex patterns at startup using `new RegExp()` and cache them. Validate patterns at config load time. Consider using the `re2` library (linear-time regex) for user-supplied patterns. Set a timeout on regex evaluation or use `safe-regex` to reject vulnerable patterns. |
 | SEC-06 | **MEDIUM** | Deserialization | `src/config/loader.ts:147` | YAML parsing via the `yaml` package without schema restrictions allows potentially dangerous YAML constructs. While the `yaml` npm package (v2+) is safe by default (no `!!js/function` or `!!python/object`), the parsed output is cast to arbitrary types without validation. A malicious config file could inject unexpected structure that downstream code does not handle. | Add Zod or JSON Schema validation of the parsed config object immediately after loading. Define an explicit schema for the config file and reject unknown fields. |
 | SEC-07 | **MEDIUM** | Path Traversal | `src/services/artifacts.ts:43-48` | Path traversal checks only look for `..` and `/` in `sessionId` and `name`. This misses: (a) backslash path separators on Windows (`..\\`), (b) URL-encoded variants (`%2e%2e`), (c) null bytes that can truncate path strings in some environments. The `download` method at line 73 checks `artifactId` but searches all session directories, meaning any authenticated user can download any artifact by ID (no session ownership check). | Use `path.resolve()` and verify the resulting path starts with `this.baseDir`. Add session ownership verification in `download()` and `list()` by checking that `sessionId` matches the authenticated user's session. Consider using `path.relative()` to detect traversal. |
@@ -52,7 +52,7 @@ However, several findings require attention before production deployment. The mo
 **What needs attention:**
 - SEC-11: Harden JWT claim validation. Require `sub` and `exp`.
 - SEC-08: Do not expose mTLS authorization error details to clients.
-- The JWT `algorithms` option is not set in `jwt.verify()` (auth.ts:95). This means the library will accept any algorithm the secret can verify, including `none` in some older `jsonwebtoken` versions. Explicitly set `algorithms: ['HS256']` (or whichever algorithm you intend to support).
+- ~~The JWT `algorithms` option is not set in `jwt.verify()` (auth.ts:95).~~ **REMEDIATED.** `algorithms: ['HS256']` is now explicitly set, preventing algorithm confusion attacks.
 - Consider adding `audience` validation to JWT verification for multi-tenant deployments.
 
 ### Phase 3: Privilege Tiers & Command Validation (`privilege.ts`)
@@ -64,11 +64,11 @@ However, several findings require attention before production deployment. The mo
 - `extractBaseCommand` handles env var prefix assignments
 
 **What needs attention:**
-- SEC-03: The denylist approach has fundamental bypass vectors via shell metacharacters.
-- SEC-04: Privilege level must not be caller-controlled.
+- ~~SEC-03: The denylist approach has fundamental bypass vectors via shell metacharacters.~~ **REMEDIATED.** Shell expansion blocked, chained commands split and validated per-segment at Level 0/1, expanded denylist patterns.
+- ~~SEC-04: Privilege level must not be caller-controlled.~~ **REMEDIATED.** Derived from `authClaims.scope` via `resolvePrivilegeLevel()`.
 - SEC-05: Pre-compile and validate user-supplied regex patterns.
-- Level 0 allows `env` (line 28) which can be used to inspect all environment variables, including `BASTION_JWT_SECRET` and `BASTION_API_KEY`. Remove `env` from the Level 0 allowlist or filter its output.
-- Level 0 allows `echo` which combined with shell features (`echo $(cat /etc/shadow)`) could be abused, though the base command check may mitigate this partially.
+- ~~Level 0 allows `env` (line 28).~~ **REMEDIATED.** `env` removed from Level 0 allowlist.
+- ~~Level 0 allows `echo`.~~ **REMEDIATED.** `echo` removed from Level 0 allowlist.
 
 ### Phase 4: Sandboxed Execution (`sandbox.ts`, `job-manager.ts`)
 
@@ -79,7 +79,7 @@ However, several findings require attention before production deployment. The mo
 - `.unref()` on cleanup intervals prevents keeping the process alive
 
 **What needs attention:**
-- SEC-01/SEC-02: The sandbox itself just runs `/bin/sh -c <command>` -- all safety depends on upstream validation, which `exec_script` bypasses.
+- ~~SEC-01/SEC-02: The sandbox itself just runs `/bin/sh -c <command>` -- all safety depends on upstream validation, which `exec_script` bypasses.~~ **REMEDIATED.** `exec_script` now writes to a temp file and spawns the interpreter directly. Per-line privilege validation is applied.
 - SEC-10: Jobs lack ownership tracking.
 - The sandbox does not set `uid`/`gid`, does not use `cgroups`, does not use `chroot`/`namespaces`, and does not restrict filesystem access. The name "sandbox" is aspirational. For production, consider running commands in a container, a nsjail sandbox, or at minimum with a dedicated unprivileged user.
 - When `options.env` is not provided, `undefined` is passed to spawn, which inherits the full `process.env` (sandbox.ts:46). This exposes all server environment variables (including secrets) to executed commands.
@@ -140,9 +140,9 @@ The codebase demonstrates several security-conscious design decisions that shoul
 
 ## 5. Priority Remediation Order
 
-1. **SEC-01 + SEC-02** (CRITICAL): Fix `exec_script` shell injection and add privilege validation. This is exploitable today.
-2. **SEC-04** (HIGH): Remove caller-controlled `privilege_level`. This is the second most impactful fix.
-3. **SEC-03** (HIGH): Strengthen command validation against shell metacharacter bypass. Add pipeline/chain splitting.
+1. ~~**SEC-01 + SEC-02** (CRITICAL): Fix `exec_script` shell injection and add privilege validation.~~ **DONE.**
+2. ~~**SEC-04** (HIGH): Remove caller-controlled `privilege_level`.~~ **DONE.**
+3. ~~**SEC-03** (HIGH): Strengthen command validation against shell metacharacter bypass.~~ **DONE.**
 4. **SEC-07 + SEC-09 + SEC-10** (MEDIUM): Add ownership checks across artifacts, sessions, and jobs.
 5. **SEC-05 + SEC-06** (MEDIUM): Validate config inputs (regex patterns, YAML schema).
 6. **Sandbox hardening**: Restrict `process.env` exposure, consider container-based isolation, remove `env` from Level 0 allowlist.

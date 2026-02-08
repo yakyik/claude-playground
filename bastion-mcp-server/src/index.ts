@@ -71,6 +71,17 @@ async function main(): Promise<void> {
   // 5. Start the appropriate transport
   const transport = process.env.TRANSPORT ?? 'http';
   if (transport === 'stdio') {
+    // Guard: refuse stdio mode when auth credentials are configured,
+    // unless explicitly overridden. This prevents accidentally running
+    // an unauthenticated server in production. (NEW-01)
+    const hasAuthCredentials = !!(config.auth.jwtSecret || config.auth.apiKey);
+    const allowStdioNoAuth = process.env.ALLOW_STDIO_NO_AUTH === 'true';
+    if (hasAuthCredentials && !allowStdioNoAuth) {
+      throw new Error(
+        'Refusing to start in stdio mode: auth credentials are configured but stdio bypasses authentication. ' +
+        'Set ALLOW_STDIO_NO_AUTH=true to override (development only).'
+      );
+    }
     await runStdio(mcpServer);
   } else {
     await runHttp(mcpServer, config);
