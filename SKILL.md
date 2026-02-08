@@ -1,13 +1,17 @@
 ---
 name: bastion-bridge
 description: Secure bridge to internal infrastructure via Tailscale mesh
-version: 0.1.0
-tools:
+allowed-tools:
   - bastion_db_query
   - bastion_api_request
   - bastion_check_connectivity
-auth: Bearer token (JWT or API key)
-transport: Streamable HTTP (POST /mcp)
+  - exec_command
+  - exec_script
+  - get_command_allowlist
+  - check_job_status
+  - session_start
+  - session_end
+  - session_list
 ---
 
 # Bastion Bridge Skill
