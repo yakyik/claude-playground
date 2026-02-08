@@ -1,17 +1,6 @@
 ---
 name: bastion-bridge
-description: Secure bridge to internal infrastructure via Tailscale mesh
-allowed-tools:
-  - bastion_db_query
-  - bastion_api_request
-  - bastion_check_connectivity
-  - exec_command
-  - exec_script
-  - get_command_allowlist
-  - check_job_status
-  - session_start
-  - session_end
-  - session_list
+description: Secure bridge to internal infrastructure via Tailscale mesh. Use when the user needs to query internal databases, call internal APIs, check backend connectivity, execute commands, or manage bastion sessions.
 ---
 
 # Bastion Bridge Skill
